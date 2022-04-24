@@ -1,20 +1,92 @@
 import 'regenerator-runtime/runtime';
 import React, { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
 import Big from 'big.js';
 import Form from './components/Form';
 import SignIn from './components/SignIn';
 import Messages from './components/Messages';
+import { providers, utils } from "near-api-js";
+
 
 const SUGGESTED_DONATION = '0';
 const BOATLOAD_OF_GAS = Big(3).times(10 ** 13).toFixed();
 
-const App = ({ contract, currentUser, nearConfig, wallet }) => {
-  const [messages, setMessages] = useState([]);
 
+const syncAccountState = (currentAccountId, newAccounts, setAccountId) => {
+  if (!newAccounts.length) {
+    localStorage.removeItem("accountId");
+    setAccountId(null);
+    return;
+  }
+
+  const validAccountId = currentAccountId && newAccounts.some((x) => x.accountId === currentAccountId);
+  const newAccountId = validAccountId ? currentAccountId : newAccounts[0].accountId;
+
+  localStorage.setItem("accountId", newAccountId);
+  setAccountId(newAccountId);
+};
+
+const initAccountId = async (selector, setAccountId) => {
+  const accounts = await selector.getAccounts();
+  if (accounts.length < 1) {
+    return;
+  }
+  const initAccountId = accounts[0]['accountId'];
+  if (initAccountId) {
+    setAccountId(initAccountId);
+  }
+};
+
+const queryMessageAndSet = (selector, setMessages) =>{
+  const provider = new providers.JsonRpcProvider({
+    url: selector.network.nodeUrl,
+  });
+
+  provider.query({
+    request_type: "call_function",
+    account_id: selector.getContractId(),
+    method_name: "getMessages",
+    args_base64: "",
+    finality: "optimistic",
+  })
+  .then((res) => {
+    msgsToSet = [];
+    msgs = JSON.parse(Buffer.from(res.result).toString());
+    msgs.map((v, i)=>{
+      msgsToSet = [...msgsToSet, v];
+    });
+    setMessages(msgsToSet);
+  });
+}
+
+const App = ({ selector }) => {
+  const [ messages, setMessages] = useState([]);
+  // const [selector, setSelector] = useState(null);
+  const [accountId, setAccountId] = useState(null);
+  const [amount, setAmount] = useState(1);
+  
+  // balance await walletConnection.account().state()
+  window.a = selector;
+
+  // set the account
+  useEffect(() => {
+    if (!selector) {
+      return;
+    }
+    console.log("accountId", accountId)
+    initAccountId(selector, setAccountId);
+    
+    // syncAccountState(accountId, e.accounts, setAccounts, setAccountId);
+    const subscription = selector.on("accountsChanged", (e) => {
+      syncAccountState(accountId, e.accounts, setAccountId);
+    });
+
+    return () => subscription.remove();
+  }, [selector, accountId]);
+
+  // show the message
   useEffect(() => {
     // TODO: don't just fetch once; subscribe!
-    contract.getMessages().then(setMessages);
+    queryMessageAndSet(selector, setMessages);
   }, []);
 
   const onSubmit = (e) => {
@@ -27,69 +99,66 @@ const App = ({ contract, currentUser, nearConfig, wallet }) => {
     // TODO: optimistically update page with new message,
     // update blockchain data in background
     // add uuid to each message, so we know which one is already known
-    contract.addMessage(
-      { text: message.value },
-      BOATLOAD_OF_GAS,
-      Big(donation.value || '0').times(10 ** 24).toFixed()
-    ).then(() => {
-      contract.getMessages().then(messages => {
-        setMessages(messages);
-        message.value = '';
-        donation.value = SUGGESTED_DONATION;
-        fieldset.disabled = false;
-        message.focus();
-      });
+
+    selector.signAndSendTransaction({
+      signerId: accountId,
+      actions: [
+        {
+          type: "FunctionCall",
+          params: {
+            methodName: "addMessage",
+            args: { text: message.value },
+            gas: BOATLOAD_OF_GAS,
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            deposit: (donation.value * 1000000000000000000000000).toLocaleString('fullwide', { useGrouping: false }),
+          },
+        },
+      ],
+    })
+    .catch((err) => {
+      alert("Failed to add message");
+      console.log("Failed to add message");
+      throw err;
+    })
+    .then(() => {
+      queryMessageAndSet(selector, setMessages);
+      message.value = "";
+      donation.value = SUGGESTED_DONATION;
+      fieldset.disabled = false;
+      message.focus();
+    })
+    .catch((err) => {
+      console.error(err);
+      fieldset.disabled = false;
     });
   };
 
   const signIn = () => {
-    wallet.requestSignIn(
-      {contractId: nearConfig.contractName, methodNames: [contract.addMessage.name]}, //contract requesting access
-      'NEAR Guest Book', //optional name
-      null, //optional URL to redirect to if the sign in was successful
-      null //optional URL to redirect to if the sign in was NOT successful
-    );
+    selector.show()
   };
 
   const signOut = () => {
-    wallet.signOut();
-    window.location.replace(window.location.origin + window.location.pathname);
+    selector.signOut().catch((err) => {
+      console.log("Failed to sign out");
+    });
   };
 
   return (
     <main>
       <header>
         <h1>NEAR Guest Book</h1>
-        { currentUser
+        { accountId
           ? <button onClick={signOut}>Log out</button>
           : <button onClick={signIn}>Log in</button>
         }
       </header>
-      { currentUser
-        ? <Form onSubmit={onSubmit} currentUser={currentUser} />
+      { accountId
+        ? <Form onSubmit={onSubmit} accountId={accountId} balance={(10000 ** 24)} />
         : <SignIn/>
       }
-      { !!currentUser && !!messages.length && <Messages messages={messages}/> }
+      { !!accountId && !!messages.length && <Messages messages={messages}/> }
     </main>
   );
-};
-
-App.propTypes = {
-  contract: PropTypes.shape({
-    addMessage: PropTypes.func.isRequired,
-    getMessages: PropTypes.func.isRequired
-  }).isRequired,
-  currentUser: PropTypes.shape({
-    accountId: PropTypes.string.isRequired,
-    balance: PropTypes.string.isRequired
-  }),
-  nearConfig: PropTypes.shape({
-    contractName: PropTypes.string.isRequired
-  }).isRequired,
-  wallet: PropTypes.shape({
-    requestSignIn: PropTypes.func.isRequired,
-    signOut: PropTypes.func.isRequired
-  }).isRequired
 };
 
 export default App;

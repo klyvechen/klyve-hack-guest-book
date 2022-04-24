@@ -17,6 +17,9 @@ export default function SignIn() {
       <p>
           Go ahead and sign in to try it out!
       </p>
+      <h2>
+          Take times to do the challenge 3. Sorry for didn't modify the page.
+      </h2>
     </>
   );
 }
