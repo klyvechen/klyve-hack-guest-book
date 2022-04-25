@@ -10,21 +10,6 @@ import { providers, utils } from "near-api-js";
 const SUGGESTED_DONATION = '0';
 const BOATLOAD_OF_GAS = Big(3).times(10 ** 13).toFixed();
 
-
-const syncAccountState = (currentAccountId, newAccounts, setAccountId) => {
-  if (!newAccounts.length) {
-    localStorage.removeItem("accountId");
-    setAccountId(null);
-    return;
-  }
-
-  const validAccountId = currentAccountId && newAccounts.some((x) => x.accountId === currentAccountId);
-  const newAccountId = validAccountId ? currentAccountId : newAccounts[0].accountId;
-
-  localStorage.setItem("accountId", newAccountId);
-  setAccountId(newAccountId);
-};
-
 const initAccountId = async (selector, setAccountId) => {
   const accounts = await selector.getAccounts();
   if (accounts.length < 1) {
@@ -60,34 +45,35 @@ const queryMessageAndSet = (selector, setMessages) =>{
 
 const App = ({ selector }) => {
   const [ messages, setMessages] = useState([]);
-  // const [selector, setSelector] = useState(null);
   const [accountId, setAccountId] = useState(null);
-  const [amount, setAmount] = useState(1);
   
-  // balance await walletConnection.account().state()
-  window.a = selector;
-
-  // set the account
-  useEffect(() => {
-    if (!selector) {
-      return;
-    }
-    console.log("accountId", accountId)
-    initAccountId(selector, setAccountId);
-    
-    // syncAccountState(accountId, e.accounts, setAccounts, setAccountId);
-    const subscription = selector.on("accountsChanged", (e) => {
-      syncAccountState(accountId, e.accounts, setAccountId);
-    });
-
-    return () => subscription.remove();
-  }, [selector, accountId]);
-
   // show the message
   useEffect(() => {
+    initAccountId(selector, setAccountId)
     // TODO: don't just fetch once; subscribe!
     queryMessageAndSet(selector, setMessages);
-  }, []);
+  }, [accountId]);
+
+  const signIn = async () => {
+    selector.show()
+  };
+
+  const signOut = async () => {
+    await selector.signOut().catch((err) => {
+      console.log("Failed to sign out");
+    });
+    let newAccounts = await selector.getAccounts();
+    setAccountId(newAccounts.length > 0 ? newAccounts[0]['accountId'] : null);
+  };
+
+  selector.on("connect", () => {
+    console.log("connect");n
+  });
+
+  selector.on("signIn", () => {
+    console.log("User signed in!");
+    initAccountId(selector, setAccountId)
+  });
 
   const onSubmit = (e) => {
     e.preventDefault();
@@ -130,16 +116,6 @@ const App = ({ selector }) => {
     .catch((err) => {
       console.error(err);
       fieldset.disabled = false;
-    });
-  };
-
-  const signIn = () => {
-    selector.show()
-  };
-
-  const signOut = () => {
-    selector.signOut().catch((err) => {
-      console.log("Failed to sign out");
     });
   };
 

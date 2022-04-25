@@ -5,6 +5,8 @@ import App from './App';
 import NearWalletSelector from "@near-wallet-selector/core";
 import { setupNearWallet } from "@near-wallet-selector/near-wallet";
 import { setupSender } from "@near-wallet-selector/sender";
+import senderIconUrl from "@near-wallet-selector/sender/assets/sender-icon.png";
+import nearWalletIconUrl from "@near-wallet-selector/near-wallet/assets/near-wallet-icon.png";
 
 // Initializing contract
 async function initContract() {
@@ -13,8 +15,12 @@ async function initContract() {
     network: "testnet",
     contractId: "guest-book.klyve-hack.testnet",
     wallets: [
-      setupNearWallet(),
-      setupSender(),
+      setupNearWallet({
+        iconUrl: nearWalletIconUrl
+      }),
+      setupSender({
+        iconUrl: senderIconUrl
+      }),
     ],
   })
 
